@@ -1,0 +1,316 @@
+<template>
+  <v-card>
+    <v-card-title>
+      <v-btn color="primary" @click="addGoods">新增求购商品</v-btn>
+      <v-btn color="error" @click="deleteAllGoods">全部删除</v-btn>
+      <v-spacer />
+      <v-text-field
+        label="输入关键字搜索"
+        class="flex sm3"
+        append-icon="search"
+        v-model.lazy="filter.search"
+      ></v-text-field>
+    </v-card-title>
+    <v-divider></v-divider>
+    <v-data-table
+      :headers="headers"
+      :items="goodsList"
+      :pagination.sync="pagination"
+      :total-items="totalGoods"
+      :loading="loading"
+      class="elevation-10"
+      select-all
+      v-model="selected"
+    >
+      <template slot="items" slot-scope="props">
+        <td class="text-xs-center">
+          <v-checkbox v-model="props.selected" primary hide-details></v-checkbox>
+        </td>
+        <td class="text-xs-center">{{ props.item.id }}</td>
+        <td class="text-xs-center">{{ props.item.title }}</td>
+        <td class="text-xs-center">{{ props.item.content}}</td>
+        <td class="text-xs-center">{{ props.item.sell_price/100}}</td>
+        <td class="text-xs-center">{{ props.item.trade_place}}</td>
+        <td class="text-xs-center">{{ props.item.view_number}}</td>
+        <td class="text-xs-center">{{ props.item.create_time}}</td>
+        <td class="text-xs-center">{{ props.item.update_time}}</td>
+        <!-- <td class="text-xs-center">{{ props.item.bname }}</td> -->
+        <td class="justify-center layout">
+          <v-btn icon small @click="editGoods(props.item)">
+            <i class="el-icon-edit" />
+          </v-btn>
+          <v-btn icon small @click="deleteItem(props.item.id)">
+            <i class="el-icon-delete" />
+          </v-btn>
+        </td>
+      </template>
+      <template slot="no-data">
+        <v-alert :value="true" color="error" icon="warning">对不起，没有查询到任何数据 :(</v-alert>
+      </template>
+      <template
+        slot="pageText"
+        slot-scope="props"
+      >共{{props.itemsLength}}条,当前:{{ props.pageStart }} - {{ props.pageStop }}</template>
+    </v-data-table>
+
+    <v-dialog max-width="800" max-height v-model="show" persistent scrollable>
+      <v-card>
+        <!--对话框的标题-->
+        <v-toolbar dense dark color="primary">
+          <v-toolbar-title>{{isEdit ? '修改' : '新增'}}求购商品</v-toolbar-title>
+          <v-spacer />
+          <!--关闭窗口的按钮-->
+          <v-btn icon @click="closeWindow">
+            <v-icon>close</v-icon>
+          </v-btn>
+        </v-toolbar>
+        <!--对话框的内容，表单-->
+        <v-card-text class="px-5" style="height: 600px">
+          <want-form
+            @initStep="initStep"
+            @close="close"
+            :isEdit="isEdit"
+            :oldGoods="oldGoods"
+            :step="step"
+            :show="show"
+            ref="goodsForm"
+          />
+        </v-card-text>
+      </v-card>
+    </v-dialog>
+  </v-card>
+</template>
+
+<script>
+// 导入自定义的表单组件
+import WantForm from "./WantForm";
+
+export default {
+  name: "Want",
+  data() {
+    return {
+      totalGoods: 0, //总条数
+      goodsList: [], //当前页品牌数据
+      loading: true, //是否在加载中
+      headers: [
+        // 表头
+        { text: "id", align: "center", value: "id", sortable: true },
+        { text: "标题", align: "center", sortable: false, value: "title" },
+        { text: "商品详情", align: "center", sortable: false, value: "content" },
+
+        {
+          text: "期望价格",
+          align: "center",
+          sortable: false,
+          value: "sell_price"
+        },
+         {
+          text: "期望交易地点",
+          align: "center",
+          sortable: false,
+          value: "sell_price"
+        },
+        {
+          text: "浏览数",
+          align: "center",
+          sortable: false,
+          value: "view_number"
+        },
+        {
+          text: "发布时间",
+          align: "center",
+          sortable: true,
+          value: "create_time"
+        },
+        {
+          text: "修改时间",
+          align: "center",
+          sortable: false,
+          value: "update_time"
+        },
+        // {text: '品牌', align: 'center', value: 'brand', sortable: false,},
+        { text: "操作", align: "center", sortable: false }
+      ],
+      show: false, //控制对话框的显示
+      // seckill_show:false, //秒杀对话框显示
+      oldGoods: {}, //即将编辑的商品信息
+      // seckill_goods_message:{}, //秒杀商品信息
+      isEdit: false, //是否被编辑
+      selected: [], //选择的条目
+      pagination: {}, //分页信息
+      filter: {
+        saleable: true, //上架还是下架
+        search: "" //搜索过滤字段
+      },
+      step: 1 //子组件中的步骤索引，初始为1
+    };
+  },
+  watch: {
+    pagination: {
+      deep: true,
+      handler() {
+        this.getDataFromServer();
+      }
+    },
+    filter: {
+      deep: true,
+      handler() {
+        this.getDataFromServer();
+      }
+    }
+  },
+  created() {
+    this.verify()
+      .then(() => {
+        this.getDataFromServer();
+      })
+      .catch(() => {
+        this.$router.push("/login");
+      });
+  },
+  methods: {
+    close() {
+      this.show = false;
+      //重新获取数据
+      this.getDataFromServer();
+      //初始化弹窗
+      this.step = 1;
+    },
+    initStep() {
+      this.step = 1;
+    },
+    getDataFromServer() {
+      //从服务器加载数据
+
+      // 开启进度条
+      this.loading = true;
+
+      //发起ajax请求
+      // 分页查询page,rows,key,sortBy,desc
+
+      this.$http
+        .get("/item/want/page", {
+          params: {
+            page: this.pagination.page, //当前页
+            rows: this.pagination.rowsPerPage, //每页大小
+            sortBy: this.pagination.sortBy, //排序字段
+            desc: this.pagination.descending, //是否降序
+            key: this.filter.search, //搜索条件
+            saleable: this.filter.saleable === 0 ? true : this.filter.saleable //上下架
+          }
+        })
+        .then(resp => {
+          this.goodsList = resp.data.items;
+          this.totalGoods = resp.data.total;
+          //关闭进度条
+          this.loading = false;
+        });
+    },
+    addGoods() {
+      //修改标记
+      this.isEdit = false;
+      //控制弹窗可见
+      this.show = true;
+      //把oldGoods变为null
+      this.oldGoods = null;
+    },
+    deleteAllGoods() {
+      const deleteGoodsId = this.selected.map(s => {
+        return s.id;
+      });
+
+      if (deleteGoodsId.length > 0) {
+        this.verify()
+          .then(() => {
+            this.$message
+              .confirm("全部删除，不可恢复！")
+              .then(() => {
+                this.$http
+                  .delete("/item/want/want/" + deleteGoodsId.join("-"))
+                  .then(() => {
+                    this.getDataFromServer();
+                    this.selected = [];
+                  })
+                  .catch(() => {
+                    this.$message.error("删除失败！");
+                  });
+              })
+              .catch(() => {
+                this.$message.info("删除取消！");
+              });
+          })
+          .catch(() => {
+            this.$router.push("/login");
+          });
+      } else {
+        this.$message.info("选中后再进行操作！");
+      }
+    },
+    closeWindow() {
+      this.oldGoods = null;
+      //重新加载数据
+      this.getDataFromServer();
+      //关闭窗口
+      this.show = false;
+    },
+    lastStep() {
+      if (this.step > 1) {
+        this.step--;
+      }
+    },
+    nextStep() {
+      if (this.$refs.goodsForm.$refs.basic.validate() && this.step < 4) {
+        this.step++;
+      }
+    },
+    deleteItem(id) {
+      const selectId = this.selected.map(s => {
+        return s.id;
+      });
+      console.log(selectId);
+      if (selectId.length === 1 && selectId[0] === id) {
+        this.verify()
+          .then(() => {
+            this.$http
+              .delete("/item/seconds/want/" + selectId)
+              .then(() => {
+                this.getDataFromServer();
+                this.selected = [];
+              })
+              .catch(() => {
+                this.$message.error("删除失败！");
+              });
+          })
+          .catch(() => {
+            // this.$router.push("/login");
+          });
+      } else {
+        this.$message.info("选中后再进行操作！");
+      }
+    },
+    editGoods(oldGoods) {
+      //console.log(oldGoods);
+      this.oldGoods = oldGoods;
+      
+
+      this.$http
+        .get("/item/want/want/" + oldGoods.id)
+        .then(({ data }) => {
+          this.isEdit = true;
+          this.oldGoods.skusList = data.skus;
+
+          //显示弹窗
+          this.show = true;
+        })
+        .catch();
+    },
+
+  },
+  components: {
+    WantForm
+  }
+};
+</script>
+
+<style scoped>
+</style>

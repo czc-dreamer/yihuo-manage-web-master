@@ -1,0 +1,16 @@
+this.$http({
+            url: "/item/seconds",
+            method: this.isEdit ? "put" : "post",
+            data: this.isEdit ? this.goodsUp : this.goodsSave
+          })
+            .then(() => {
+              //成功，关闭窗口
+              setTimeout(() => {
+                this.$emit("close");
+                this.$message.success("保存成功！");
+                this.clear();
+              }, 2000);
+            })
+            .catch(() => {
+              this.$message.error("保存失败！");
+            });
